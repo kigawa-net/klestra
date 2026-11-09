@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: klestra-headless
+  namespace: klestra
+  labels:
+    app: klestra
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: true # Raft ピアは Ready 前から相互解決できる必要がある
+  selector:
+    app: klestra
+  ports:
+    - name: raft
+      port: 8080
+      targetPort: 8080
+      protocol: TCP

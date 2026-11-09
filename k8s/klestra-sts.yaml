@@ -1,0 +1,82 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: klestra
+  namespace: klestra
+  labels:
+    app: klestra
+spec:
+  serviceName: klestra-headless
+  replicas: 3
+  podManagementPolicy: Parallel # クォーラム形成のため全Podを並行起動
+  selector:
+    matchLabels:
+      app: klestra
+  template:
+    metadata:
+      labels:
+        app: klestra
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: klestra
+          image: kigawa-net/klestra:1.1.0 # プレースホルダ (JDK 17 + klestra-jvm-1.1.0.jar)
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: raft
+              containerPort: 8080
+              protocol: TCP
+          env:
+            - name: NODE_ID # klestra-0 / klestra-1 / klestra-2
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: KLESTRA_CONFIG_PATH
+              value: /etc/klestra/klestra-config.json
+            - name: KLESTRA_DATA_DIR
+              value: /var/lib/klestra
+            - name: JAVA_TOOL_OPTIONS
+              value: "-XX:MaxRAMPercentage=75"
+          readinessProbe:
+            tcpSocket:
+              port: raft
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 3
+          livenessProbe:
+            tcpSocket:
+              port: raft
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          volumeMounts:
+            - name: config
+              mountPath: /etc/klestra
+              readOnly: true
+            - name: data
+              mountPath: /var/lib/klestra
+      volumes:
+        - name: config
+          configMap:
+            name: klestra-config
+  # Raft状態の永続化: Pod毎に 1Gi / RWO のPVCが klestra-0..2 用に自動作成される (data-klestra-N)
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          app: klestra
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 1Gi

@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: klestra-config
+  namespace: klestra
+  labels:
+    app: klestra
+data:
+  # nodeId は全Pod共通のプレースホルダ。実行時に環境変数 NODE_ID(Pod名)で上書きする想定。
+  klestra-config.json: |
+    {
+      "apiVersion": "klestra.kigawa.dev/v1alpha1",
+      "kind": "KlestraConfig",
+      "metadata": { "name": "klestra", "namespace": "klestra" },
+      "spec": {
+        "nodeId": "klestra-0",
+        "members": [
+          { "id": "klestra-0", "endpoint": "klestra-0.klestra-headless.klestra.svc.cluster.local:8080", "voting": true },
+          { "id": "klestra-1", "endpoint": "klestra-1.klestra-headless.klestra.svc.cluster.local:8080", "voting": true },
+          { "id": "klestra-2", "endpoint": "klestra-2.klestra-headless.klestra.svc.cluster.local:8080", "voting": true }
+        ]
+      }
+    }
