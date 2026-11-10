@@ -5,6 +5,15 @@ on:
     branches:
       - main
 
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  OPENBAO_ADDR: https://openbao.example.com:8200
+  OPENBAO_ROLE: github-actions
+  OPENBAO_KV_PATH: secret/data/dockerhub
+
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
@@ -15,12 +24,36 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      - name: Authenticate to OpenBao and read Docker Hub PAT
+        id: openbao
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          oidc_response=$(curl --fail --silent --show-error \
+            -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=${OPENBAO_ADDR}")
+          github_jwt=$(jq -er '.value' <<<"${oidc_response}")
+
+          login_response=$(curl --fail --silent --show-error \
+            -H "Content-Type: application/json" \
+            --data "$(jq -n --arg role "${OPENBAO_ROLE}" --arg jwt "${github_jwt}" '{role: $role, jwt: $jwt}')" \
+            "${OPENBAO_ADDR}/v1/auth/jwt/login")
+          openbao_token=$(jq -er '.auth.client_token' <<<"${login_response}")
+
+          secret_response=$(curl --fail --silent --show-error \
+            -H "X-Vault-Token: ${openbao_token}" \
+            "${OPENBAO_ADDR}/v1/${OPENBAO_KV_PATH}")
+          dockerhub_pat=$(jq -er '.data.data.pat' <<<"${secret_response}")
+
+          echo "::add-mask::${dockerhub_pat}"
+          echo "dockerhub_pat=${dockerhub_pat}" >> "${GITHUB_OUTPUT}"
+
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
         with:
-          registry: docker.io
           username: kigawa-net
-          password: ${{ secrets.DOCKER_HUB_TOKEN }}
+          password: ${{ steps.openbao.outputs.dockerhub_pat }}
 
       - name: Build and push
         uses: docker/build-push-action@v6
