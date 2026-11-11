@@ -18,14 +18,13 @@ jobs:
       - name: Get Docker Hub PAT from Bitwarden Secrets Manager
         id: bw
         env:
-          BWS_SERVER: https://vault.bitwarden.com
-          BWS_SERVICE_ACCOUNT_TOKEN: ${{ secrets.BITWARDEN_SERVICE_ACCOUNT_TOKEN }}
+          BWS_ACCESS_TOKEN: ${{ secrets.BITWARDEN_ACCESS_TOKEN }}
           BWS_SECRET_ID: ${{ secrets.BITWARDEN_SECRET_ID }}
         run: |
-          curl -sL https://bws-cli.bitwarden.com/linux-amd64/bws -o /tmp/bws
-          chmod +x /tmp/bws
-          /tmp/bws login --token $BWS_SERVICE_ACCOUNT_TOKEN --server $BWS_SERVER
-          dockerhub_pat=$(/tmp/bws get secret $BWS_SECRET_ID --field pat 2>/dev/null)
+          # BWS CLIをインストール
+          curl -sL https://bws.bitwarden.com/install | sh
+          # シークレットを取得
+          dockerhub_pat=$(bws secret get $BWS_SECRET_ID --output json | jq -r '.[0].value')
           echo "::add-mask::${dockerhub_pat}"
           echo "dockerhub_pat=${dockerhub_pat}" >> $GITHUB_OUTPUT
 
