@@ -24,7 +24,7 @@ jobs:
           # BWS CLIをインストール
           curl -sL https://bws.bitwarden.com/install | sh
           # シークレットを取得
-          dockerhub_pat=$(bws secret get $BWS_SECRET_ID --output json | jq -r '.[0].value')
+          dockerhub_pat=$(bws secret get $BWS_SECRET_ID --output json | jq -r '.value')
           echo "::add-mask::${dockerhub_pat}"
           echo "dockerhub_pat=${dockerhub_pat}" >> $GITHUB_OUTPUT
 
