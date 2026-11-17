@@ -15,28 +15,35 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Get Docker Hub PAT from Bitwarden Secrets Manager
+      - name: Get Harbor credentials from Bitwarden Secrets Manager
         id: bw
         env:
           BWS_ACCESS_TOKEN: ${{ secrets.BITWARDEN_ACCESS_TOKEN }}
-          BWS_SECRET_ID: ${{ secrets.BITWARDEN_SECRET_ID }}
+          BWS_HARBOR_USER_ID: 929d361e-e599-4b58-b173-b3e201004d0a
+          BWS_HARBOR_PASS_ID: 13c66d3b-7eb6-4c37-b466-b3e2010057b1
         run: |
           # BWS CLIをインストール
           curl -sL https://bws.bitwarden.com/install | sh
           # シークレットを取得
-          dockerhub_pat=$(bws secret get $BWS_SECRET_ID --output json | jq -r '.value')
-          echo "::add-mask::${dockerhub_pat}"
-          echo "dockerhub_pat=${dockerhub_pat}" >> $GITHUB_OUTPUT
+          harbor_user=$(bws secret get "$BWS_HARBOR_USER_ID" --output json | jq -er '.value')
+          echo "::add-mask::${harbor_user}"
+          echo "harbor_user=${harbor_user}" >> "$GITHUB_OUTPUT"
+          # BWS APIのレートリミットを避ける
+          sleep 30
+          harbor_pass=$(bws secret get "$BWS_HARBOR_PASS_ID" --output json | jq -er '.value')
+          echo "::add-mask::${harbor_pass}"
+          echo "harbor_pass=${harbor_pass}" >> "$GITHUB_OUTPUT"
 
-      - name: Log in to Docker Hub
+      - name: Log in to Harbor
         uses: docker/login-action@v4
         with:
-          username: kigawa-net
-          password: ${{ steps.bw.outputs.dockerhub_pat }}
+          registry: harbor.kigawa.net
+          username: ${{ steps.bw.outputs.harbor_user }}
+          password: ${{ steps.bw.outputs.harbor_pass }}
 
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
           context: .
           push: true
-          tags: kigawa-net/klestra:1.1.0
+          tags: harbor.kigawa.net/kigawa-net/klestra:1.1.0
