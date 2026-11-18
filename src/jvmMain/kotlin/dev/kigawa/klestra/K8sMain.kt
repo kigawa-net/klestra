@@ -24,6 +24,8 @@ private val json = Json { ignoreUnknownKeys = true }
 @Serializable
 private data class Envelope(val from: String, val message: ConsensusMessage)
 
+private data class ElectionState(val mode: AgentMode, val term: Long, val leaderId: String?)
+
 private fun log(text: String) = System.err.println("[klestra] $text")
 
 /** Accepts "host:port", "tcp://host:port" or "host" (port defaults to [LISTEN_PORT]). */
@@ -66,6 +68,7 @@ private class PeerSender(private val peerId: String, endpoint: String, private v
             try {
                 Socket().use { socket ->
                     socket.connect(InetSocketAddress(host, port), CONNECT_TIMEOUT_MILLIS)
+                    log("peer $peerId ($host:$port) connected")
                     socket.tcpNoDelay = true
                     queue.clear() // stale RPCs from the outage are useless
                     val writer = socket.getOutputStream().bufferedWriter()
@@ -105,6 +108,16 @@ private fun runNode(nodeId: String, configPath: String, dataDir: String) {
     val failure = LinkedBlockingQueue<Throwable>()
 
     // ConsensusEngine is single-threaded; every engine call uses synchronized(engine).
+    var lastState: ElectionState? = null
+
+    // Observe each engine operation before another thread can change the state.
+    fun logStateChange() {
+        val state = ElectionState(engine.mode, engine.currentTerm, engine.leaderId)
+        if (state == lastState) return
+        lastState = state
+        log("state mode=${state.mode} term=${state.term} leader=${state.leaderId}")
+    }
+
     fun dispatch(messages: List<OutboundMessage>) {
         messages.forEach { senders[it.to]?.send(it.message) }
     }
@@ -114,7 +127,9 @@ private fun runNode(nodeId: String, configPath: String, dataDir: String) {
             if (line.isBlank()) return@forEachLine
             try {
                 val envelope = json.decodeFromString<Envelope>(line)
-                val out = synchronized(engine) { engine.receive(envelope.from, envelope.message) }
+                val out = synchronized(engine) {
+                    engine.receive(envelope.from, envelope.message).also { logStateChange() }
+                }
                 dispatch(out)
             } catch (e: Exception) {
                 log("dropping bad message: ${e.message}")
@@ -126,6 +141,7 @@ private fun runNode(nodeId: String, configPath: String, dataDir: String) {
         server.reuseAddress = true
         server.bind(InetSocketAddress(LISTEN_PORT)) // wildcard address (InetAddress.ANY)
         log("listening on 0.0.0.0:$LISTEN_PORT")
+        synchronized(engine) { logStateChange() }
         thread(name = "klestra-accept", isDaemon = true) {
             try {
                 while (!server.isClosed) {
@@ -150,7 +166,10 @@ private fun runNode(nodeId: String, configPath: String, dataDir: String) {
             val now = System.nanoTime()
             val elapsed = (now - last) / 1_000_000
             last = now
-            dispatch(synchronized(engine) { engine.tick(elapsed) })
+            val out = synchronized(engine) {
+                engine.tick(elapsed).also { logStateChange() }
+            }
+            dispatch(out)
         }
     } finally {
         senders.values.forEach { it.stop() }
