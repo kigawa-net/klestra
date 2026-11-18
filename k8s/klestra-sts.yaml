@@ -18,10 +18,12 @@ spec:
         app: klestra
     spec:
       terminationGracePeriodSeconds: 30
+      imagePullSecrets:
+        - name: harbor-registry
       containers:
         - name: klestra
-          image: kigawa-net/klestra:1.1.0 # プレースホルダ (JDK 17 + klestra-jvm-1.1.0.jar)
-          imagePullPolicy: IfNotPresent
+          image: harbor.kigawa.net/kigawa-net/klestra:1.1.0
+          imagePullPolicy: Always
           ports:
             - name: raft
               containerPort: 8080
